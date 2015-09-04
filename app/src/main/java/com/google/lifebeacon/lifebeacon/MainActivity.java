@@ -15,14 +15,74 @@ import com.android.volley.VolleyError;
 import com.android.volley.toolbox.StringRequest;
 import com.android.volley.toolbox.Volley;
 
-public class MainActivity extends AppCompatActivity {
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.GoogleApiClient.ConnectionCallbacks;
+import com.google.android.gms.common.api.GoogleApiClient.OnConnectionFailedListener;
+import com.google.android.gms.nearby.Nearby;
+import com.google.android.gms.nearby.messages.Message;
+import com.google.android.gms.nearby.messages.MessageFilter;
+import com.google.android.gms.nearby.messages.MessageListener;
+import com.google.android.gms.nearby.messages.Strategy;
+
+public class MainActivity extends AppCompatActivity
+        implements ConnectionCallbacks, OnConnectionFailedListener {
+
+    private static final String TAG = "LifeBeacon";
+
+    private final MessageListener messageListener = new MessageListener() {
+        // Called each time a new message is discovered nearby.
+        @Override
+        public void onFound(Message message) {
+            String nearbyMessageNamespace = message.getNamespace();
+            String nearbyMessageType = message.getType();
+            String nearbyMessageString = new String(message.getContent());
+
+            Log.i(TAG, "Message string: " + nearbyMessageString);
+            Log.i(TAG, "Message namespaced type: " + nearbyMessageNamespace +
+                    "/" + nearbyMessageType);
+        }
+
+        // Called when a message is no longer nearby.
+        @Override
+        public void onLost(Message message) {
+            Log.i(TAG, "Lost message: " + message);
+        }
+    };
+
+    private GoogleApiClient mGoogleApiClient;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        mGoogleApiClient = new GoogleApiClient.Builder(this)
+                .addApi(Nearby.MESSAGES_API)
+                        // These callbacks happen on the main thread.
+                .addConnectionCallbacks(this)
+                .addOnConnectionFailedListener(this)
+                .build();
+
+
         connect("zzz", "531531531");
         sendLocation();
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        Log.i(TAG, "Connecting GoogleApiClient.");
+        mGoogleApiClient.connect();
+    }
+
+    private void subscribeBeacon() {
+
+        // Subscribe to receive nearby messages created by this Developer Console project.
+        // Use Strategy.BLE_ONLY because we are only interested in messages that we
+        // attached to BLE beacons.
+        Nearby.Messages.subscribe(mGoogleApiClient, messageListener, Strategy.BLE_ONLY)
+                .setResultCallback(new ErrorCheckingCallback("subscribe()"));
     }
 
     private void connect(String ssid, String key) {
@@ -79,5 +139,20 @@ public class MainActivity extends AppCompatActivity {
         }
 
         return super.onOptionsItemSelected(item);
+    }
+
+    @Override
+    public void onConnected(Bundle bundle) {
+
+    }
+
+    @Override
+    public void onConnectionSuspended(int i) {
+
+    }
+
+    @Override
+    public void onConnectionFailed(ConnectionResult connectionResult) {
+
     }
 }
