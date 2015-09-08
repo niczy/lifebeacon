@@ -1,5 +1,14 @@
 package com.google.lifebeacon.lifebeacon;
 
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothManager;
+import android.bluetooth.le.BluetoothLeScanner;
+import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanResult;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.location.Location;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiManager;
@@ -12,6 +21,7 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.android.volley.Request;
 import com.android.volley.RequestQueue;
@@ -29,17 +39,33 @@ import com.google.android.gms.location.LocationServices;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.Arrays;
 
 public class MainActivity extends AppCompatActivity implements GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, LocationListener {
 
+    private static final int REQUEST_ENABLE_BT = 1;
     TextView indicatorView;
     GoogleApiClient mGoogleApiClient;
     Handler mHandler;
+    private BluetoothAdapter mBluetoothAdapter;
+    private static final long SCAN_PERIOD = 10000;
+    private boolean mScanning = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        if (!getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) {
+            Toast.makeText(this, R.string.ble_not_supported, Toast.LENGTH_SHORT).show();
+            finish();
+        }
+
+        // Initializes Bluetooth adapter.
+        final BluetoothManager bluetoothManager =
+                (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+        mBluetoothAdapter = bluetoothManager.getAdapter();
+        
         mHandler = new Handler(Looper.getMainLooper());
         final TextView ssidView = (TextView) findViewById(R.id.ssid);
         final TextView passwordView = (TextView) findViewById(R.id.password);
@@ -58,7 +84,56 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             }
         });
 
+        findViewById(R.id.scan).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startScan();
+            }
+        });
     }
+
+    private void startScan() {
+        // Ensures Bluetooth is available on the device and it is enabled. If not,
+        // displays a dialog requesting user permission to enable Bluetooth.
+        if (mBluetoothAdapter == null || !mBluetoothAdapter.isEnabled()) {
+            Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+            startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
+            return;
+        }
+        final BluetoothLeScanner scanner = mBluetoothAdapter.getBluetoothLeScanner();
+        if (!mScanning) {
+            // Stops scanning after a pre-defined scan period.
+            mHandler.postDelayed(new Runnable() {
+                public boolean mScanning;
+
+                @Override
+                public void run() {
+                    mScanning = false;
+                    scanner.stopScan(mLeScanCallback);
+                }
+            }, SCAN_PERIOD);
+
+            mScanning = true;
+            scanner.startScan(mLeScanCallback);
+        } else {
+            mScanning = false;
+            scanner.stopScan(mLeScanCallback);
+        }
+    }
+
+    private ScanCallback mLeScanCallback =
+            new ScanCallback() {
+                @Override
+                public void onScanResult(int callbackType, final ScanResult result) {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            Toast.makeText(MainActivity.this, result.toString(), Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                }
+
+            };
 
     private void connect(String ssid, String key) {
         WifiManager wifiManager = (WifiManager)getSystemService(WIFI_SERVICE);
