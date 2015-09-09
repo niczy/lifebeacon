@@ -20,8 +20,9 @@ android {
 }
 
 dependencies {
-    compile fileTree(dir: 'libs', include: ['*.jar'])
+    compile fileTree(dir: 'libs', include: ['*.jar;*.aar'])
     compile 'com.android.support:appcompat-v7:23.0.0'
     compile 'com.mcxiaoke.volley:library:1.0.17'
     compile 'com.google.android.gms:play-services:7.8.0'
+    compile(name:'estimote-sdk', ext:'aar')
 }

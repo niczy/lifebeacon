@@ -30,16 +30,24 @@ import com.android.volley.VolleyError;
 import com.android.volley.toolbox.HurlStack;
 import com.android.volley.toolbox.StringRequest;
 import com.android.volley.toolbox.Volley;
+import com.estimote.sdk.Beacon;
+import com.estimote.sdk.Nearable;
+import com.estimote.sdk.Region;
+import com.estimote.sdk.eddystone.Eddystone;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.location.LocationListener;
 import com.google.android.gms.location.LocationRequest;
+import com.estimote.sdk.BeaconManager;
 import com.google.android.gms.location.LocationServices;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.Arrays;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class MainActivity extends AppCompatActivity implements GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, LocationListener {
 
@@ -47,25 +55,23 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     TextView indicatorView;
     GoogleApiClient mGoogleApiClient;
     Handler mHandler;
-    private BluetoothAdapter mBluetoothAdapter;
     private static final long SCAN_PERIOD = 10000;
     private boolean mScanning = false;
+    private BeaconManager mBeaconManager;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        mBeaconManager = new BeaconManager(this);
+
         if (!getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) {
             Toast.makeText(this, R.string.ble_not_supported, Toast.LENGTH_SHORT).show();
             finish();
         }
 
-        // Initializes Bluetooth adapter.
-        final BluetoothManager bluetoothManager =
-                (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
-        mBluetoothAdapter = bluetoothManager.getAdapter();
-        
+
         mHandler = new Handler(Looper.getMainLooper());
         final TextView ssidView = (TextView) findViewById(R.id.ssid);
         final TextView passwordView = (TextView) findViewById(R.id.password);
@@ -90,50 +96,46 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                 startScan();
             }
         });
+
+        mBeaconManager.setEddystoneListener(new BeaconManager.EddystoneListener() {
+            @Override
+            public void onEddystonesFound(List<Eddystone> eddystones) {
+                for (Eddystone eddyStone : eddystones) {
+                    Log.i("E", "url is "  + eddyStone.url);
+                    if (eddyStone.url != null && eddyStone.url.startsWith("http://lb")) {
+                        Pattern pattern = Pattern.compile("http://lb/([^/]+)/([^/]+)");
+                        Matcher matcher = pattern.matcher(eddyStone.url);
+                        if (matcher.matches()) {
+                            String ssid = matcher.group(1);
+                            String pwd = matcher.group(2);
+                            connect(ssid, pwd);
+                            sendLocation();
+                            Log.i("E", "Success");
+                            mBeaconManager.stopEddystoneScanning(scanId);
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+
+
     }
 
     private void startScan() {
-        // Ensures Bluetooth is available on the device and it is enabled. If not,
-        // displays a dialog requesting user permission to enable Bluetooth.
-        if (mBluetoothAdapter == null || !mBluetoothAdapter.isEnabled()) {
-            Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-            startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
-            return;
-        }
-        final BluetoothLeScanner scanner = mBluetoothAdapter.getBluetoothLeScanner();
-        if (!mScanning) {
-            // Stops scanning after a pre-defined scan period.
-            mHandler.postDelayed(new Runnable() {
-                public boolean mScanning;
-
-                @Override
-                public void run() {
-                    mScanning = false;
-                    scanner.stopScan(mLeScanCallback);
-                }
-            }, SCAN_PERIOD);
-
-            mScanning = true;
-            scanner.startScan(mLeScanCallback);
-        } else {
-            mScanning = false;
-            scanner.stopScan(mLeScanCallback);
-        }
+        connectToService();
     }
 
-    private ScanCallback mLeScanCallback =
-            new ScanCallback() {
-                @Override
-                public void onScanResult(int callbackType, final ScanResult result) {
-                    runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            Toast.makeText(MainActivity.this, result.toString(), Toast.LENGTH_SHORT).show();
-                        }
-                    });
-                }
+    private String scanId;
+    private void connectToService() {
 
-            };
+        mBeaconManager.connect(new BeaconManager.ServiceReadyCallback() {
+            @Override
+            public void onServiceReady() {
+                scanId = mBeaconManager.startEddystoneScanning();
+            }
+        });
+    }
 
     private void connect(String ssid, String key) {
         WifiManager wifiManager = (WifiManager)getSystemService(WIFI_SERVICE);
@@ -163,7 +165,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                 return connection;
             }
         });
-        String url ="https://www.google.com";
+        String url ="https://www.google.com/startTracking";
 
         StringRequest stringRequest = new StringRequest(Request.Method.GET, url,
                 new Response.Listener<String>() {
