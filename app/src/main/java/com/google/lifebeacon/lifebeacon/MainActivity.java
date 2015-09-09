@@ -28,6 +28,7 @@ import com.android.volley.RequestQueue;
 import com.android.volley.Response;
 import com.android.volley.VolleyError;
 import com.android.volley.toolbox.HurlStack;
+import com.android.volley.toolbox.JsonObjectRequest;
 import com.android.volley.toolbox.StringRequest;
 import com.android.volley.toolbox.Volley;
 import com.estimote.sdk.Beacon;
@@ -40,6 +41,8 @@ import com.google.android.gms.location.LocationListener;
 import com.google.android.gms.location.LocationRequest;
 import com.estimote.sdk.BeaconManager;
 import com.google.android.gms.location.LocationServices;
+
+import org.json.JSONObject;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
@@ -55,40 +58,22 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     TextView indicatorView;
     GoogleApiClient mGoogleApiClient;
     Handler mHandler;
-    private static final long SCAN_PERIOD = 10000;
-    private boolean mScanning = false;
     private BeaconManager mBeaconManager;
+
+    private RequestQueue requestQueue;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        buildGoogleApiClient();
         mBeaconManager = new BeaconManager(this);
 
         if (!getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) {
             Toast.makeText(this, R.string.ble_not_supported, Toast.LENGTH_SHORT).show();
             finish();
         }
-
-
-        mHandler = new Handler(Looper.getMainLooper());
-        final TextView ssidView = (TextView) findViewById(R.id.ssid);
-        final TextView passwordView = (TextView) findViewById(R.id.password);
-        buildGoogleApiClient();
-        indicatorView = (TextView) findViewById(R.id.indicator);
-        findViewById(R.id.connect).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                connect(ssidView.getText().toString(), passwordView.getText().toString());
-                mHandler.postDelayed(new Runnable() {
-                    @Override
-                    public void run() {
-                        sendLocation();
-                    }
-                }, 3000L);
-            }
-        });
 
         findViewById(R.id.scan).setOnClickListener(new View.OnClickListener() {
             @Override
@@ -109,7 +94,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                             String ssid = matcher.group(1);
                             String pwd = matcher.group(2);
                             connect(ssid, pwd);
-                            sendLocation();
+                            startTrackingSession();
                             Log.i("E", "Success");
                             mBeaconManager.stopEddystoneScanning(scanId);
                             break;
@@ -155,9 +140,9 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         wifiManager.reconnect();
     }
 
-    private void sendLocation() {
+    private void startTrackingSession() {
         // Instantiate the RequestQueue.
-        RequestQueue queue = Volley.newRequestQueue(this, new HurlStack() {
+        requestQueue = Volley.newRequestQueue(this, new HurlStack() {
             @Override
             protected HttpURLConnection createConnection(URL url) throws IOException {
                 HttpURLConnection connection = super.createConnection(url);
@@ -165,34 +150,67 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                 return connection;
             }
         });
-        String url ="https://www.google.com/startTracking";
 
-        StringRequest stringRequest = new StringRequest(Request.Method.GET, url,
-                new Response.Listener<String>() {
-                    @Override
-                    public void onResponse(String response) {
-                        Location mLastLocation = LocationServices.FusedLocationApi.getLastLocation(
-                                mGoogleApiClient);
-                        if (mLastLocation != null) {
-                            indicatorView.setText("Latitude: " + String.valueOf(mLastLocation.getLatitude()
-                                    + "\nLongtitude: " + String.valueOf(mLastLocation.getLongitude())));
-                        }
-                        indicatorView.setText(indicatorView.getText() + "\nLocation sent! Saved!");
-                        Log.i("main", response);
-                    }
-                }, new Response.ErrorListener() {
+        String url ="http://104.197.71.0/service/StartTracking.php";
+
+        JsonObjectRequest request = new JsonObjectRequest(url, new Response.Listener<JSONObject>() {
+            @Override
+            public void onResponse(JSONObject response) {
+                try {
+                    int sessionId = response.getInt("id");
+                    Log.i("response",response.toString());
+                    sendLocation(sessionId);
+
+                } catch (Exception e) {
+                    Log.e("e",e.getMessage());
+                }
+            }
+        }, new Response.ErrorListener() {
             @Override
             public void onErrorResponse(VolleyError error) {
-                Log.e("main", "error" + error.toString());
                 mHandler.postDelayed(new Runnable() {
                     @Override
                     public void run() {
-                        sendLocation();
+                        startTrackingSession();
                     }
-                }, 3000L);
+                },2000L);
+                Log.e("e", error.getMessage());
             }
         });
-        queue.add(stringRequest);
+        requestQueue.add(request);
+    }
+
+    private void sendLocation(int id) {
+
+        StringBuilder urlBuilder = new StringBuilder("http://104.197.71.0/service/PushStatus.php?entity_id=1&beacon_ids=[0]&battery=0.5&latitude=0.45&longitude=4.5");
+
+        urlBuilder.append("entity_id=").append(id);
+
+        urlBuilder.append("&battery=").append(0.9);
+
+        Location mLastLocation = LocationServices.FusedLocationApi.getLastLocation(
+                mGoogleApiClient);
+        if (mLastLocation != null) {
+            urlBuilder.append("&latitude=").append(mLastLocation.getLatitude()).append("&longitude=").append(mLastLocation.getLongitude());
+        }
+
+        JsonObjectRequest request = new JsonObjectRequest(urlBuilder.toString(), new Response.Listener<JSONObject>() {
+            @Override
+            public void onResponse(JSONObject response) {
+                try {
+                    Log.i("response", response.toString());
+
+                } catch (Exception e) {
+                    Log.e("e",e.getMessage());
+                }
+            }
+        }, new Response.ErrorListener() {
+            @Override
+            public void onErrorResponse(VolleyError error) {
+                Log.e("e", error.getMessage());
+            }
+        });
+        requestQueue.add(request);
     }
 
     protected synchronized void buildGoogleApiClient() {
