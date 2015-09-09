@@ -9,37 +9,19 @@
         android:id="@+id/title"
         android:text="@string/hello_world" android:layout_width="wrap_content"
         android:layout_height="wrap_content" />
-    <EditText
-        android:id="@+id/ssid"
-        android:hint="SSID"
-        android:layout_below="@+id/title"
-        android:layout_width="fill_parent"
-        android:layout_height="wrap_content" />
-    <EditText
-        android:id="@+id/password"
-        android:hint="PASSWORD"
-        android:layout_below="@+id/ssid"
-        android:layout_width="fill_parent"
-        android:layout_height="wrap_content" />
+
     <Button
-        android:id="@+id/connect"
-        android:text="Connect"
-        android:layout_below="@id/password"
+        android:id="@+id/scan"
+        android:text="Start Scan"
         android:layout_width="fill_parent"
         android:layout_height="wrap_content" />
+
     <TextView
         android:id="@+id/indicator"
         android:textSize="27sp"
         android:text="@string/hello_world"
         android:textColor="@android:color/black"
-        android:layout_below="@+id/connect"
-        android:layout_width="fill_parent"
-        android:layout_height="wrap_content" />
-
-    <Button
-        android:id="@+id/scan"
-        android:text="Scan"
-        android:layout_below="@id/indicator"
+        android:layout_below="@id/scan"
         android:layout_width="fill_parent"
         android:layout_height="wrap_content" />
 
