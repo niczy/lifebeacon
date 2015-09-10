@@ -119,8 +119,8 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                             String ssid = matcher.group(1);
                             String pwd = matcher.group(2);
                             mBeaconManager.stopEddystoneScanning(scanId);
-                            connect("Our Home", "womendejia");
-                            //connect(ssid, pwd);
+                            //connect("Our Home", "womendejia");
+                            connect(ssid, pwd);
                             startTrackingSession();
                             Log.i("E", "Success");
                             break;
