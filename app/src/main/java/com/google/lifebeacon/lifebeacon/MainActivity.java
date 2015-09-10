@@ -104,7 +104,6 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             finish();
         }
 
-
         if (mBluetoothAdapter == null || !mBluetoothAdapter.isEnabled()) {
             Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
             startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
