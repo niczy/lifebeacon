@@ -10,6 +10,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.location.Location;
+import android.media.AudioManager;
+import android.media.ToneGenerator;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiManager;
 import android.os.Handler;
@@ -20,6 +22,7 @@ import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -49,6 +52,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Random;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -61,15 +65,27 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     private BeaconManager mBeaconManager;
     private RequestQueue requestQueue;
     private String scanId;
+    private Random random;
+    private ToneGenerator toneG;
+
+    private int messageNum;
+    private double initialBatteryLevel;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        random = new Random();
+
+        messageNum = 3;
+        initialBatteryLevel = ((double) random.nextInt(20) + 80.0) / 100;
+
         buildGoogleApiClient();
         mHandler = new Handler(Looper.getMainLooper());
         mBeaconManager = new BeaconManager(this);
+        toneG = new ToneGenerator(AudioManager.STREAM_NOTIFICATION, ToneGenerator.MAX_VOLUME);
+
 
         // Initializes Bluetooth adapter.
         final BluetoothManager bluetoothManager =
@@ -81,12 +97,15 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             finish();
         }
 
-        findViewById(R.id.scan).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                startScan();
-            }
-        });
+        if (mBluetoothAdapter == null || !mBluetoothAdapter.isEnabled()) {
+            Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+            startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
+            return;
+        }
+        connectToService();
+
+        TextView indicatior = (TextView) findViewById(R.id.indicator);
+        indicatior.setText("Start scanning for Life Beacons....");
 
         mBeaconManager.setEddystoneListener(new BeaconManager.EddystoneListener() {
             @Override
@@ -99,29 +118,17 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                         if (matcher.matches()) {
                             String ssid = matcher.group(1);
                             String pwd = matcher.group(2);
-                            connect(ssid, pwd);
+                            mBeaconManager.stopEddystoneScanning(scanId);
+                            connect("Our Home", "womendejia");
+                            //connect(ssid, pwd);
                             startTrackingSession();
                             Log.i("E", "Success");
-                            mBeaconManager.stopEddystoneScanning(scanId);
                             break;
                         }
                     }
                 }
             }
         });
-
-
-    }
-
-    private void startScan() {
-        // Ensures Bluetooth is available on the device and it is enabled. If not,
-        // displays a dialog requesting user permission to enable Bluetooth.
-        if (mBluetoothAdapter == null || !mBluetoothAdapter.isEnabled()) {
-            Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-            startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
-            return;
-        }
-        connectToService();
     }
 
     private void connectToService() {
@@ -144,7 +151,6 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         wifiConfig.SSID = String.format("\"%s\"", ssid);
         wifiConfig.preSharedKey = String.format("\"%s\"", key);
 
-
         //remember id
         int netId = wifiManager.addNetwork(wifiConfig);
         wifiManager.disconnect();
@@ -154,7 +160,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
 
     private void startTrackingSession() {
         TextView indicatior = (TextView) findViewById(R.id.indicator);
-        indicatior.setText("Start tracking session...");
+        indicatior.setText("Life Beacon found. Start tracking session...");
         // Instantiate the RequestQueue.
         requestQueue = Volley.newRequestQueue(this, new HurlStack() {
             @Override
@@ -172,11 +178,11 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             public void onResponse(JSONObject response) {
                 try {
                     int sessionId = response.getInt("id");
-                    Log.i("response",response.toString());
-                    sendLocation(sessionId);
+                    Log.i("startTracking", response.toString());
+                    sendDeviceInfo(sessionId, initialBatteryLevel);
 
                 } catch (Exception e) {
-                    Log.e("e",e.toString());
+                    Log.e("startTracking",e.toString());
                 }
             }
         }, new Response.ErrorListener() {
@@ -192,44 +198,62 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             }
         });
         requestQueue.add(request);
+        startBeeping();
     }
 
-    private void sendLocation(final int sessionId) {
-
+    private void sendDeviceInfo(final int sessionId, double previousBatteryLevel) {
 
         StringBuilder urlBuilder = new StringBuilder("http://104.197.71.0/service/PushStatus.php?");
 
-        Double batteryLevel = 0.9D;
+        final double currentBatteryLevel = previousBatteryLevel - ((double) random.nextInt(10)) / 100;
 
         urlBuilder.append("entity_id=").append(sessionId);
 
-        urlBuilder.append("&battery=").append((double) batteryLevel);
-
-        Location mLastLocation = LocationServices.FusedLocationApi.getLastLocation(
-                mGoogleApiClient);
+        Location mLastLocation = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
         if (mLastLocation != null) {
+
             urlBuilder.append("&latitude=").append(mLastLocation.getLatitude()).append("&longitude=").append(mLastLocation.getLongitude());
+            urlBuilder.append("&battery=").append(currentBatteryLevel);
+
             TextView indicator = (TextView) findViewById(R.id.indicator);
             indicator.setText(indicator.getText()
-                    + "\nStart sending location to server..."
+                    + "\nSending device info to server..."
                     + "\nLatitude: " + String.valueOf(mLastLocation.getLatitude())
                     + "\nLongtitude: " + String.valueOf(mLastLocation.getLongitude())
-                    + "\nBattery level: " + batteryLevel);
+                    + "\nBattery level: " + currentBatteryLevel);
 
             JsonObjectRequest request = new JsonObjectRequest(urlBuilder.toString(), new Response.Listener<JSONObject>() {
                 @Override
                 public void onResponse(JSONObject response) {
                     try {
-                        Log.i("response", response.toString());
+                        if (messageNum > 0) {
+                            mHandler.postDelayed(new Runnable() {
+                                @Override
+                                public void run() {
+                                    sendDeviceInfo(sessionId, currentBatteryLevel);
+                                }
+                            }, 5000L);
+                            messageNum--;
+                        }
+                        else {
+                            stopTrackingSeesion(sessionId);
+                        }
+                        Log.i("sendLocation", response.toString());
 
                     } catch (Exception e) {
-                        Log.e("e",e.getMessage());
+                        Log.e("sendLocation",e.getMessage());
                     }
                 }
             }, new Response.ErrorListener() {
                 @Override
                 public void onErrorResponse(VolleyError error) {
-                    Log.e("e", error.getMessage());
+                    mHandler.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            sendDeviceInfo(sessionId, currentBatteryLevel);
+                        }
+                    }, 2000L);
+                    Log.e("sendLocation", error.getMessage());
                 }
             });
             requestQueue.add(request);
@@ -237,13 +261,50 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             mHandler.postDelayed(new Runnable() {
                 @Override
                 public void run() {
-                 sendLocation(sessionId);
+                    sendDeviceInfo(sessionId, currentBatteryLevel);
                 }
             }, 2000L);
             Log.e("sendLocation", "Fail to get location info!");
         }
 
 
+    }
+
+    private void startBeeping() {
+        toneG.startTone(ToneGenerator.TONE_CDMA_INTERCEPT);
+    }
+
+    private void stopBeeping() {
+        toneG.stopTone();
+    }
+
+    private void stopTrackingSeesion(final int sessionId) {
+        StringBuilder urlBuilder = new StringBuilder("http://104.197.71.0/service/StopTracking.php?");
+
+        urlBuilder.append("entity_id=").append(sessionId);
+
+            JsonObjectRequest request = new JsonObjectRequest(urlBuilder.toString(), new Response.Listener<JSONObject>() {
+                @Override
+                public void onResponse(JSONObject response) {
+                    TextView indicatior = (TextView) findViewById(R.id.indicator);
+                    indicatior.setText(indicatior.getText()
+                            + "\nStop tracking session " + sessionId);
+                    Log.i("stopTracking", response.toString());
+                }
+            }, new Response.ErrorListener() {
+                @Override
+                public void onErrorResponse(VolleyError error) {
+                    mHandler.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            stopTrackingSeesion(sessionId);
+                        }
+                    },2000L);
+                    Log.e("stopTracking", error.getMessage());
+                }
+            });
+            requestQueue.add(request);
+        stopBeeping();
     }
 
     protected synchronized void buildGoogleApiClient() {
