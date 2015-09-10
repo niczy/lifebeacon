@@ -14,6 +14,7 @@ import android.media.AudioManager;
 import android.media.ToneGenerator;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiManager;
+import android.opengl.Visibility;
 import android.os.Handler;
 import android.os.Looper;
 import android.support.v7.app.AppCompatActivity;
@@ -65,11 +66,16 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     private BeaconManager mBeaconManager;
     private RequestQueue requestQueue;
     private String scanId;
+
     private Random random;
     private ToneGenerator toneG;
 
     private int messageNum;
     private double initialBatteryLevel;
+
+    private TextView mCountingDownView;
+    private int countingDown = 3;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -82,6 +88,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         initialBatteryLevel = ((double) random.nextInt(20) + 80.0) / 100;
 
         buildGoogleApiClient();
+        mCountingDownView = (TextView) findViewById(R.id.countDown);
         mHandler = new Handler(Looper.getMainLooper());
         mBeaconManager = new BeaconManager(this);
         toneG = new ToneGenerator(AudioManager.STREAM_NOTIFICATION, ToneGenerator.MAX_VOLUME);
@@ -96,6 +103,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             Toast.makeText(this, R.string.ble_not_supported, Toast.LENGTH_SHORT).show();
             finish();
         }
+
 
         if (mBluetoothAdapter == null || !mBluetoothAdapter.isEnabled()) {
             Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
@@ -119,9 +127,9 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                             String ssid = matcher.group(1);
                             String pwd = matcher.group(2);
                             mBeaconManager.stopEddystoneScanning(scanId);
-                            connect("Our Home", "womendejia");
-                            //connect(ssid, pwd);
-                            startTrackingSession();
+                            //connect("Our Home", "womendejia");
+                            connect(ssid, pwd);
+                            countingDown();
                             Log.i("E", "Success");
                             break;
                         }
@@ -129,6 +137,36 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                 }
             }
         });
+    }
+
+    private void countingDown() {
+        if (mCountingDownView.getVisibility() == View.GONE) {
+            mCountingDownView.setVisibility(View.VISIBLE);
+        }
+        if (countingDown == 0) {
+            mCountingDownView.setVisibility(View.GONE);
+            startTrackingSession();
+        } else {
+            mCountingDownView.setText(countingDown + "");
+            countingDown--;
+            mHandler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    countingDown();
+                }
+            }, 1000L);
+        }
+    }
+
+    private void startScan() {
+        // Ensures Bluetooth is available on the device and it is enabled. If not,
+        // displays a dialog requesting user permission to enable Bluetooth.
+        if (mBluetoothAdapter == null || !mBluetoothAdapter.isEnabled()) {
+            Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+            startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
+            return;
+        }
+        connectToService();
     }
 
     private void connectToService() {
