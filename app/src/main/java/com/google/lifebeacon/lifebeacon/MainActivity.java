@@ -12,6 +12,7 @@ import android.content.pm.PackageManager;
 import android.location.Location;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiManager;
+import android.opengl.Visibility;
 import android.os.Handler;
 import android.os.Looper;
 import android.support.v7.app.AppCompatActivity;
@@ -61,6 +62,8 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     private BeaconManager mBeaconManager;
     private RequestQueue requestQueue;
     private String scanId;
+    private TextView mCountingDownView;
+    private int countingDown = 3;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -68,6 +71,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         setContentView(R.layout.activity_main);
 
         buildGoogleApiClient();
+        mCountingDownView = (TextView) findViewById(R.id.countDown);
         mHandler = new Handler(Looper.getMainLooper());
         mBeaconManager = new BeaconManager(this);
 
@@ -84,6 +88,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         findViewById(R.id.scan).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                //countingDown();
                 startScan();
             }
         });
@@ -100,7 +105,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                             String ssid = matcher.group(1);
                             String pwd = matcher.group(2);
                             connect(ssid, pwd);
-                            startTrackingSession();
+                            countingDown();
                             Log.i("E", "Success");
                             mBeaconManager.stopEddystoneScanning(scanId);
                             break;
@@ -109,8 +114,25 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                 }
             }
         });
+    }
 
-
+    private void countingDown() {
+        if (mCountingDownView.getVisibility() == View.GONE) {
+            mCountingDownView.setVisibility(View.VISIBLE);
+        }
+        if (countingDown == 0) {
+            mCountingDownView.setVisibility(View.GONE);
+            startTrackingSession();
+        } else {
+            mCountingDownView.setText(countingDown + "");
+            countingDown--;
+            mHandler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    countingDown();
+                }
+            }, 1000L);
+        }
     }
 
     private void startScan() {
