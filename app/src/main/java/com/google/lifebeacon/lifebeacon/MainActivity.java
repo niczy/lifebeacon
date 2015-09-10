@@ -55,12 +55,12 @@ import java.util.regex.Pattern;
 public class MainActivity extends AppCompatActivity implements GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, LocationListener {
 
     private static final int REQUEST_ENABLE_BT = 1;
-    TextView indicatorView;
-    GoogleApiClient mGoogleApiClient;
-    Handler mHandler;
+    private GoogleApiClient mGoogleApiClient;
+    private Handler mHandler;
+    private BluetoothAdapter mBluetoothAdapter;
     private BeaconManager mBeaconManager;
-
     private RequestQueue requestQueue;
+    private String scanId;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -68,7 +68,13 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         setContentView(R.layout.activity_main);
 
         buildGoogleApiClient();
+        mHandler = new Handler(Looper.getMainLooper());
         mBeaconManager = new BeaconManager(this);
+
+        // Initializes Bluetooth adapter.
+        final BluetoothManager bluetoothManager =
+                (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+        mBluetoothAdapter = bluetoothManager.getAdapter();
 
         if (!getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) {
             Toast.makeText(this, R.string.ble_not_supported, Toast.LENGTH_SHORT).show();
@@ -86,7 +92,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             @Override
             public void onEddystonesFound(List<Eddystone> eddystones) {
                 for (Eddystone eddyStone : eddystones) {
-                    Log.i("E", "url is "  + eddyStone.url);
+                    Log.i("E", "url is " + eddyStone.url);
                     if (eddyStone.url != null && eddyStone.url.startsWith("http://lb")) {
                         Pattern pattern = Pattern.compile("http://lb/([^/]+)/([^/]+)");
                         Matcher matcher = pattern.matcher(eddyStone.url);
@@ -108,10 +114,16 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     }
 
     private void startScan() {
+        // Ensures Bluetooth is available on the device and it is enabled. If not,
+        // displays a dialog requesting user permission to enable Bluetooth.
+        if (mBluetoothAdapter == null || !mBluetoothAdapter.isEnabled()) {
+            Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+            startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
+            return;
+        }
         connectToService();
     }
 
-    private String scanId;
     private void connectToService() {
 
         mBeaconManager.connect(new BeaconManager.ServiceReadyCallback() {
@@ -141,6 +153,8 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     }
 
     private void startTrackingSession() {
+        TextView indicatior = (TextView) findViewById(R.id.indicator);
+        indicatior.setText("Start tracking session...");
         // Instantiate the RequestQueue.
         requestQueue = Volley.newRequestQueue(this, new HurlStack() {
             @Override
@@ -162,7 +176,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                     sendLocation(sessionId);
 
                 } catch (Exception e) {
-                    Log.e("e",e.getMessage());
+                    Log.e("e",e.toString());
                 }
             }
         }, new Response.ErrorListener() {
@@ -180,37 +194,56 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         requestQueue.add(request);
     }
 
-    private void sendLocation(int id) {
+    private void sendLocation(final int sessionId) {
 
-        StringBuilder urlBuilder = new StringBuilder("http://104.197.71.0/service/PushStatus.php?entity_id=1&beacon_ids=[0]&battery=0.5&latitude=0.45&longitude=4.5");
 
-        urlBuilder.append("entity_id=").append(id);
+        StringBuilder urlBuilder = new StringBuilder("http://104.197.71.0/service/PushStatus.php?");
 
-        urlBuilder.append("&battery=").append(0.9);
+        Double batteryLevel = 0.9D;
+
+        urlBuilder.append("entity_id=").append(sessionId);
+
+        urlBuilder.append("&battery=").append((double) batteryLevel);
 
         Location mLastLocation = LocationServices.FusedLocationApi.getLastLocation(
                 mGoogleApiClient);
         if (mLastLocation != null) {
             urlBuilder.append("&latitude=").append(mLastLocation.getLatitude()).append("&longitude=").append(mLastLocation.getLongitude());
+            TextView indicator = (TextView) findViewById(R.id.indicator);
+            indicator.setText(indicator.getText()
+                    + "\nStart sending location to server..."
+                    + "\nLatitude: " + String.valueOf(mLastLocation.getLatitude())
+                    + "\nLongtitude: " + String.valueOf(mLastLocation.getLongitude())
+                    + "\nBattery level: " + batteryLevel);
+
+            JsonObjectRequest request = new JsonObjectRequest(urlBuilder.toString(), new Response.Listener<JSONObject>() {
+                @Override
+                public void onResponse(JSONObject response) {
+                    try {
+                        Log.i("response", response.toString());
+
+                    } catch (Exception e) {
+                        Log.e("e",e.getMessage());
+                    }
+                }
+            }, new Response.ErrorListener() {
+                @Override
+                public void onErrorResponse(VolleyError error) {
+                    Log.e("e", error.getMessage());
+                }
+            });
+            requestQueue.add(request);
+        } else {
+            mHandler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                 sendLocation(sessionId);
+                }
+            }, 2000L);
+            Log.e("sendLocation", "Fail to get location info!");
         }
 
-        JsonObjectRequest request = new JsonObjectRequest(urlBuilder.toString(), new Response.Listener<JSONObject>() {
-            @Override
-            public void onResponse(JSONObject response) {
-                try {
-                    Log.i("response", response.toString());
 
-                } catch (Exception e) {
-                    Log.e("e",e.getMessage());
-                }
-            }
-        }, new Response.ErrorListener() {
-            @Override
-            public void onErrorResponse(VolleyError error) {
-                Log.e("e", error.getMessage());
-            }
-        });
-        requestQueue.add(request);
     }
 
     protected synchronized void buildGoogleApiClient() {
@@ -268,7 +301,6 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
 
     @Override
     public void onLocationChanged(Location location) {
-        indicatorView.setText("Latitude: " + String.valueOf(location.getLatitude()
-                + "\nLongtitude: " + String.valueOf(location.getLongitude())));
+
     }
 }
